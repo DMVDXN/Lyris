@@ -1,0 +1,18 @@
+# Lyris
+
+Lyris is an AI-powered chatbot focused on music and poetry. It helps users with lyric writing, poetry creation, creative ideation, and expressive conversation.
+
+## Features
+- Music-focused chatbot support
+- Poetry assistance
+- Lyric generation and refinement
+- Creative brainstorming
+- Future audio and music tool integration
+
+## Tech Stack
+- Frontend: TBD
+- Backend: TBD
+- LLM: Claude
+
+## Status
+Early project setup
