@@ -40,7 +40,9 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: trimmedInput }),
+        body: JSON.stringify({
+          messages: updatedMessages,
+        }),
       });
 
       const data = await res.json();

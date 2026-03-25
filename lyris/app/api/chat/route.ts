@@ -1,16 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export async function POST(req: Request) {
   try {
-    console.log("KEY EXISTS:", !!process.env.ANTHROPIC_API_KEY);
-    console.log("KEY START:", process.env.ANTHROPIC_API_KEY?.slice(0, 10));
+    const { messages } = await req.json();
 
-    const { message } = await req.json();
-
-    if (!message || typeof message !== "string") {
+    if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
-        { error: "Valid message is required." },
+        { error: "A valid messages array is required." },
         { status: 400 }
       );
     }
@@ -22,21 +24,29 @@ export async function POST(req: Request) {
       );
     }
 
+    const formattedMessages = messages
+      .filter(
+        (msg: ChatMessage) =>
+          msg &&
+          (msg.role === "user" || msg.role === "assistant") &&
+          typeof msg.content === "string" &&
+          msg.content.trim() !== ""
+      )
+      .map((msg: ChatMessage) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 400,
+      max_tokens: 500,
       system:
-        "You are Lyris, a chatbot that specializes in music and poetry. Help with lyrics, songwriting, poems, rhyme, themes, and creative writing.",
-      messages: [
-        {
-          role: "user",
-          content: message,
-        },
-      ],
+        "You are Lyris, a chatbot that specializes in music and poetry. Remember the user's earlier messages in the current conversation and respond with continuity. Help with lyrics, songwriting, poems, rhyme, themes, creative writing, chord ideas, song structure, and music theory.",
+      messages: formattedMessages,
     });
 
     const reply = response.content
@@ -47,8 +57,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ reply });
   } catch (error) {
     console.error("Claude API error:", error);
+
+    const message =
+      error instanceof Error ? error.message : "Unknown server error";
+
     return NextResponse.json(
-      { error: "Failed to get response from Claude." },
+      { error: `Failed to get response from Claude: ${message}` },
       { status: 500 }
     );
   }
