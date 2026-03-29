@@ -57,6 +57,9 @@ export default function Home() {
   const [spotifyResults, setSpotifyResults] = useState<SpotifyResults | null>(
     null
   );
+  const [topArtists, setTopArtists] = useState<any[] | null>(null);
+  const [topTracks, setTopTracks] = useState<any[] | null>(null);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -109,7 +112,7 @@ export default function Home() {
         prompt:
           "What is a chord progression in simple terms, and why does it matter in songwriting?",
         art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#111827"/><rect x="26" y="28" width="180" height="22" rx="11" fill="#fafafa"/><rect x="26" y="64" width="132" height="14" rx="7" fill="#d4d4d8"/><rect x="26" y="92" width="188" height="14" rx="7" fill="#a1a1aa"/></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#111827"/><rect x="26" y="28" width="180" height="22" rx="11" fill="#fafafa"/></svg>`
         ),
       },
       {
@@ -118,7 +121,7 @@ export default function Home() {
         prompt:
           "I want to start writing emotional R&B songs, but my hooks never feel memorable. What should I practice first?",
         art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#18181b"/><circle cx="76" cy="74" r="32" fill="#22d3ee"/><rect x="126" y="48" width="142" height="18" rx="9" fill="#fafafa"/></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#18181b"/><circle cx="76" cy="74" r="32" fill="#22d3ee"/></svg>`
         ),
       },
       {
@@ -127,7 +130,7 @@ export default function Home() {
         prompt:
           "I like writing poetry, but I want to turn it into lyrics without losing the original feeling.",
         art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#0f172a"/><rect x="24" y="34" width="114" height="34" rx="14" fill="#fafafa"/><rect x="184" y="84" width="112" height="34" rx="14" fill="#22d3ee"/></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#0f172a"/><rect x="24" y="34" width="114" height="34" rx="14" fill="#fafafa"/></svg>`
         ),
       },
       {
@@ -136,7 +139,7 @@ export default function Home() {
         prompt:
           "Help me. I want to write something, but I do not know if it should be a poem, a hook, or a full song.",
         art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#09090b"/><circle cx="78" cy="86" r="38" fill="#fafafa"/><text x="64" y="100" font-family="Arial" font-size="40" fill="#111827">?</text></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#09090b"/><circle cx="78" cy="86" r="38" fill="#fafafa"/></svg>`
         ),
       },
       {
@@ -144,7 +147,7 @@ export default function Home() {
         category: "Refuse properly",
         prompt: "Can you tell me which stocks I should buy this month?",
         art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#111827"/><circle cx="78" cy="80" r="34" fill="#fafafa"/><path d="M64 66 L92 94 M92 66 L64 94" stroke="#111827" stroke-width="8" stroke-linecap="round"/></svg>`
+          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#111827"/><circle cx="78" cy="80" r="34" fill="#fafafa"/></svg>`
         ),
       },
     ],
@@ -157,11 +160,7 @@ export default function Home() {
     const trimmedInput = input.trim();
     if (!trimmedInput || loading) return;
 
-    const userMessage: ChatMessage = {
-      role: "user",
-      content: trimmedInput,
-    };
-
+    const userMessage: ChatMessage = { role: "user", content: trimmedInput };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
@@ -170,26 +169,16 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: updatedMessages,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: updatedMessages }),
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Request failed.");
-      }
+      if (!res.ok) throw new Error(data.error || "Request failed.");
 
       setMessages([
         ...updatedMessages,
-        {
-          role: "assistant",
-          content: data.reply || "No reply returned.",
-        },
+        { role: "assistant", content: data.reply || "No reply returned." },
       ]);
     } catch (error) {
       const errorMessage =
@@ -197,10 +186,7 @@ export default function Home() {
 
       setMessages([
         ...updatedMessages,
-        {
-          role: "assistant",
-          content: `Error: ${errorMessage}`,
-        },
+        { role: "assistant", content: `Error: ${errorMessage}` },
       ]);
     } finally {
       setLoading(false);
@@ -209,27 +195,18 @@ export default function Home() {
 
   async function handleSpotifySearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-
     const trimmed = spotifyQuery.trim();
     if (!trimmed || spotifyLoading) return;
 
     setSpotifyLoading(true);
 
     try {
-      const res = await fetch(
-        `/api/spotify/search?q=${encodeURIComponent(trimmed)}`
-      );
+      const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Spotify search failed.");
-      }
-
+      if (!res.ok) throw new Error(data.error || "Spotify search failed.");
       setSpotifyResults(data);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Spotify search failed.";
-      alert(message);
+      alert(error instanceof Error ? error.message : "Spotify search failed.");
     } finally {
       setSpotifyLoading(false);
     }
@@ -239,13 +216,10 @@ export default function Home() {
     if (!latestAssistantMessage || audioLoading) return;
 
     setAudioLoading(true);
-
     try {
       const res = await fetch("/api/tts", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: latestAssistantMessage }),
       });
 
@@ -258,11 +232,57 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to generate audio.";
-      alert(message);
+      alert(error instanceof Error ? error.message : "Failed to generate audio.");
     } finally {
       setAudioLoading(false);
+    }
+  }
+
+  async function loadTopItems(type: "artists" | "tracks") {
+    try {
+      const res = await fetch(`/api/spotify/me/top-items?type=${type}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load top items");
+
+      if (type === "artists") setTopArtists(data.items ?? []);
+      if (type === "tracks") setTopTracks(data.items ?? []);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to load top items");
+    }
+  }
+
+  async function createPlaylistFromResults() {
+    if (!spotifyResults?.tracks?.length) return;
+
+    setPlaylistLoading(true);
+    try {
+      const uris = spotifyResults.tracks
+        .slice(0, 5)
+        .map((track) => `spotify:track:${track.id}`);
+
+      const res = await fetch("/api/spotify/me/create-playlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Lyris Picks",
+          description: "Created from Lyris conversation results",
+          uris,
+          isPublic: false,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create playlist");
+
+      if (data.external_urls?.spotify) {
+        window.open(data.external_urls.spotify, "_blank");
+      } else {
+        alert("Playlist created.");
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to create playlist");
+    } finally {
+      setPlaylistLoading(false);
     }
   }
 
@@ -290,33 +310,21 @@ export default function Home() {
             <div className="persona-grid">
               <div className="persona-card">
                 <h3>Personality</h3>
-                <p>
-                  Sharp, expressive, curious, and thoughtful. Lyris feels like a
-                  critic, interviewer, and mentor in one voice.
-                </p>
+                <p>Sharp, expressive, curious, and thoughtful.</p>
               </div>
               <div className="persona-card">
                 <h3>Spotify Layer</h3>
-                <p>
-                  Search artists, albums, and tracks, show artwork, and embed
-                  playable Spotify content directly in the interface.
-                </p>
+                <p>Search, artwork, embeds, top items, and playlist creation.</p>
               </div>
               <div className="persona-card">
                 <h3>Audio Layer</h3>
-                <p>
-                  Turn Lyris responses into spoken poem or lyric audio with one click.
-                </p>
+                <p>Turn Lyris responses into spoken poem or lyric audio.</p>
               </div>
             </div>
           </div>
 
           <div className="hero-visual-wrap">
-            <img
-              src={heroArt}
-              alt="Lyris visual identity"
-              className="hero-visual"
-            />
+            <img src={heroArt} alt="Lyris visual identity" className="hero-visual" />
           </div>
         </section>
 
@@ -326,9 +334,7 @@ export default function Home() {
               <p className="section-kicker">Required Test Categories</p>
               <h2>Demo prompts built into the interface</h2>
             </div>
-            <p className="section-note">
-              Click any card to load a prompt and test the chatbot live.
-            </p>
+            <p className="section-note">Click any card to load a prompt.</p>
           </div>
 
           <div className="example-grid">
@@ -339,11 +345,7 @@ export default function Home() {
                 onClick={() => loadPrompt(example.prompt)}
                 className="example-card"
               >
-                <img
-                  src={example.art}
-                  alt={example.title}
-                  className="example-art"
-                />
+                <img src={example.art} alt={example.title} className="example-art" />
                 <div className="example-body">
                   <p className="example-category">{example.category}</p>
                   <h3>{example.title}</h3>
@@ -423,14 +425,31 @@ export default function Home() {
 
           <aside className="sidebar-stack">
             <div className="side-card">
+              <p className="section-kicker">Spotify Personalization</p>
+              <h3>Use your connected Spotify account</h3>
+              <div className="inline-actions">
+                <button
+                  type="button"
+                  className="quick-prompt"
+                  onClick={() => loadTopItems("artists")}
+                >
+                  Load top artists
+                </button>
+                <button
+                  type="button"
+                  className="quick-prompt"
+                  onClick={() => loadTopItems("tracks")}
+                >
+                  Load top tracks
+                </button>
+              </div>
+            </div>
+
+            <div className="side-card">
               <p className="section-kicker">Spotify Discovery</p>
               <h3>Search artists, albums, and tracks</h3>
 
-              <form
-                onSubmit={handleSpotifySearch}
-                className="chat-form"
-                style={{ marginTop: 14 }}
-              >
+              <form onSubmit={handleSpotifySearch} className="chat-form" style={{ marginTop: 14 }}>
                 <input
                   type="text"
                   value={spotifyQuery}
@@ -438,15 +457,65 @@ export default function Home() {
                   placeholder="Search Spotify by mood, artist, song, or album..."
                   className="chat-input"
                 />
-                <button
-                  type="submit"
-                  className="send-button"
-                  disabled={spotifyLoading}
-                >
+                <button type="submit" className="send-button" disabled={spotifyLoading}>
                   {spotifyLoading ? "Searching..." : "Search"}
                 </button>
               </form>
+
+              <div className="inline-actions">
+                <button
+                  type="button"
+                  className="quick-prompt"
+                  onClick={createPlaylistFromResults}
+                  disabled={playlistLoading || !spotifyResults?.tracks?.length}
+                >
+                  {playlistLoading ? "Creating playlist..." : "Create playlist from results"}
+                </button>
+              </div>
             </div>
+
+            {topArtists && (
+              <div className="side-card">
+                <p className="section-kicker">Your top artists</p>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {topArtists.slice(0, 5).map((artist: any) => (
+                    <div key={artist.id} className="spotify-result-card">
+                      {artist.images?.[0]?.url && (
+                        <img
+                          src={artist.images[0].url}
+                          alt={artist.name}
+                          className="spotify-result-image"
+                        />
+                      )}
+                      <strong>{artist.name}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {topTracks && (
+              <div className="side-card">
+                <p className="section-kicker">Your top tracks</p>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {topTracks.slice(0, 5).map((track: any) => (
+                    <div key={track.id} className="spotify-result-card">
+                      {track.album?.images?.[0]?.url && (
+                        <img
+                          src={track.album.images[0].url}
+                          alt={track.name}
+                          className="spotify-result-image"
+                        />
+                      )}
+                      <strong>{track.name}</strong>
+                      <p style={{ color: "#a1a1aa" }}>
+                        {track.artists?.map((a: any) => a.name).join(", ")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {spotifyResults && (
               <div className="side-card">
@@ -491,56 +560,6 @@ export default function Home() {
                       />
                     </div>
                   ))}
-
-                  {spotifyResults.albums.slice(0, 2).map((album) => (
-                    <div key={album.id} className="spotify-result-card">
-                      {album.image && (
-                        <img
-                          src={album.image}
-                          alt={album.name}
-                          className="spotify-result-image"
-                        />
-                      )}
-                      <strong>{album.name}</strong>
-                      {album.spotifyUrl && (
-                        <div style={{ marginTop: 10 }}>
-                          <a
-                            href={album.spotifyUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="spotify-link"
-                          >
-                            Open album on Spotify
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {spotifyResults.artists.slice(0, 2).map((artist) => (
-                    <div key={artist.id} className="spotify-result-card">
-                      {artist.image && (
-                        <img
-                          src={artist.image}
-                          alt={artist.name}
-                          className="spotify-result-image"
-                        />
-                      )}
-                      <strong>{artist.name}</strong>
-                      {artist.spotifyUrl && (
-                        <div style={{ marginTop: 10 }}>
-                          <a
-                            href={artist.spotifyUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="spotify-link"
-                          >
-                            Open artist on Spotify
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  ))}
                 </div>
               </div>
             )}
@@ -551,7 +570,7 @@ export default function Home() {
               <ul>
                 <li>Designed chatbot personality and refusal behavior</li>
                 <li>Multi-turn memory across the current session</li>
-                <li>Spotify search, artwork, and embedded playback</li>
+                <li>Spotify search, artwork, embeds, top items, and playlists</li>
                 <li>Spoken audio for poem or lyric output</li>
               </ul>
             </div>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { spotifyFetch } from "@/lib/spotify";
 
 export const runtime = "nodejs";
 
@@ -31,35 +32,6 @@ type SpotifyTrack = {
   artists?: { name: string }[];
 };
 
-async function getSpotifyAccessToken() {
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error("Missing Spotify credentials in .env.local");
-  }
-
-  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-
-  const res = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: "grant_type=client_credentials",
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Spotify token error: ${text}`);
-  }
-
-  const data = await res.json();
-  return data.access_token as string;
-}
-
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -72,18 +44,10 @@ export async function GET(req: Request) {
       );
     }
 
-    const token = await getSpotifyAccessToken();
-
-    const spotifyRes = await fetch(
+    const spotifyRes = await spotifyFetch(
       `https://api.spotify.com/v1/search?q=${encodeURIComponent(
         q
-      )}&type=track,artist,album&limit=6`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        cache: "no-store",
-      }
+      )}&type=track,artist,album&limit=6`
     );
 
     if (!spotifyRes.ok) {
