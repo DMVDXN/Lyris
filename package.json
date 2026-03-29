@@ -1,5 +1,7 @@
 {
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0"
+    "@anthropic-ai/sdk": "^0.80.0",
+    "elevenlabs": "^1.59.0",
+    "openai": "^6.33.0"
   }
 }
