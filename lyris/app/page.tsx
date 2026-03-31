@@ -2,9 +2,19 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
+type ChatImage = {
+  title: string;
+  link: string;
+  source: string;
+  imageUrl: string;
+  thumbnail: string;
+};
+
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  images?: ChatImage[];
+  imageQuery?: string;
 };
 
 type SpotifyArtistResult = {
@@ -178,7 +188,13 @@ export default function Home() {
 
       setMessages([
         ...updatedMessages,
-        { role: "assistant", content: data.reply || "No reply returned." },
+        {
+          role: "assistant",
+          content: data.reply || "No reply returned.",
+          images: Array.isArray(data.images) ? data.images : [],
+          imageQuery:
+            typeof data.imageQuery === "string" ? data.imageQuery : "",
+        },
       ]);
     } catch (error) {
       const errorMessage =
@@ -201,7 +217,9 @@ export default function Home() {
     setSpotifyLoading(true);
 
     try {
-      const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(trimmed)}`);
+      const res = await fetch(
+        `/api/spotify/search?q=${encodeURIComponent(trimmed)}`
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Spotify search failed.");
       setSpotifyResults(data);
@@ -304,7 +322,8 @@ export default function Home() {
             <h1 className="hero-title">Lyris</h1>
             <p className="hero-subtitle">
               A designed conversational AI for music and poetry with real taste,
-              real curiosity, Spotify-powered discovery, and expressive audio output.
+              real curiosity, Spotify-powered discovery, expressive audio output,
+              and visual image search.
             </p>
 
             <div className="persona-grid">
@@ -365,7 +384,8 @@ export default function Home() {
                 <h2>Talk to Lyris</h2>
               </div>
               <p className="panel-note">
-                The bot should guide, critique, clarify, and adapt across turns.
+                The bot should guide, critique, clarify, adapt across turns, and
+                return matching visuals.
               </p>
             </div>
 
@@ -381,6 +401,83 @@ export default function Home() {
                     {msg.role === "user" ? "You" : "Lyris"}
                   </p>
                   <p>{msg.content}</p>
+
+                  {msg.role === "assistant" &&
+                    msg.imageQuery &&
+                    msg.images &&
+                    msg.images.length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <p
+                          style={{
+                            fontSize: "0.8rem",
+                            color: "#a1a1aa",
+                            marginBottom: 10,
+                          }}
+                        >
+                          Visual search: {msg.imageQuery}
+                        </p>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(160px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
+                          {msg.images.map((image, imageIndex) => (
+                            <a
+                              key={`${index}-${imageIndex}`}
+                              href={image.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: "block",
+                                textDecoration: "none",
+                                background: "#111827",
+                                border: "1px solid #27272a",
+                                borderRadius: 16,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <img
+                                src={image.imageUrl || image.thumbnail}
+                                alt={image.title}
+                                style={{
+                                  width: "100%",
+                                  height: 160,
+                                  objectFit: "cover",
+                                  display: "block",
+                                }}
+                              />
+                              <div style={{ padding: 10 }}>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: "0.9rem",
+                                    fontWeight: 600,
+                                    color: "#fafafa",
+                                  }}
+                                >
+                                  {image.title}
+                                </p>
+                                {image.source && (
+                                  <p
+                                    style={{
+                                      margin: "6px 0 0",
+                                      fontSize: "0.8rem",
+                                      color: "#a1a1aa",
+                                    }}
+                                  >
+                                    {image.source}
+                                  </p>
+                                )}
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                 </div>
               ))}
 
@@ -449,7 +546,11 @@ export default function Home() {
               <p className="section-kicker">Spotify Discovery</p>
               <h3>Search artists, albums, and tracks</h3>
 
-              <form onSubmit={handleSpotifySearch} className="chat-form" style={{ marginTop: 14 }}>
+              <form
+                onSubmit={handleSpotifySearch}
+                className="chat-form"
+                style={{ marginTop: 14 }}
+              >
                 <input
                   type="text"
                   value={spotifyQuery}
@@ -457,7 +558,11 @@ export default function Home() {
                   placeholder="Search Spotify by mood, artist, song, or album..."
                   className="chat-input"
                 />
-                <button type="submit" className="send-button" disabled={spotifyLoading}>
+                <button
+                  type="submit"
+                  className="send-button"
+                  disabled={spotifyLoading}
+                >
                   {spotifyLoading ? "Searching..." : "Search"}
                 </button>
               </form>
@@ -469,7 +574,9 @@ export default function Home() {
                   onClick={createPlaylistFromResults}
                   disabled={playlistLoading || !spotifyResults?.tracks?.length}
                 >
-                  {playlistLoading ? "Creating playlist..." : "Create playlist from results"}
+                  {playlistLoading
+                    ? "Creating playlist..."
+                    : "Create playlist from results"}
                 </button>
               </div>
             </div>
@@ -572,6 +679,7 @@ export default function Home() {
                 <li>Multi-turn memory across the current session</li>
                 <li>Spotify search, artwork, embeds, top items, and playlists</li>
                 <li>Spoken audio for poem or lyric output</li>
+                <li>Visual image search results based on the conversation</li>
               </ul>
             </div>
           </aside>

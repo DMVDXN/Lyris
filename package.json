@@ -1,7 +1,9 @@
 {
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
+    "@tailwindcss/postcss": "^4.2.2",
     "elevenlabs": "^1.59.0",
-    "openai": "^6.33.0"
+    "openai": "^6.33.0",
+    "tailwindcss": "^4.2.2"
   }
 }
