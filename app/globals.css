@@ -665,6 +665,85 @@ button {
   color: var(--muted);
 }
 
+/* ── Lyrics panel ── */
+
+.lyrics-card {
+  cursor: pointer;
+}
+
+.lyrics-card:hover .netflix-card-img {
+  transform: scale(1.04);
+  border-color: var(--accent-b);
+}
+
+.lyrics-panel {
+  margin-top: 16px;
+  background: rgba(24, 24, 27, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.lyrics-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.lyrics-panel-title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lyrics-panel-artist {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.lyrics-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.lyrics-analyze-btn {
+  background: linear-gradient(135deg, var(--accent-b), var(--accent-a));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.lyrics-analyze-btn:hover {
+  opacity: 0.9;
+  border-color: transparent;
+}
+
+.lyrics-body {
+  margin: 0;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.75;
+  color: var(--muted-soft);
+  white-space: pre-wrap;
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.lyrics-loading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 @media (max-width: 1200px) {
   .example-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));

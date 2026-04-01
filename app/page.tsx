@@ -74,6 +74,14 @@ export default function Home() {
   const [topTracks, setTopTracks] = useState<SpotifyApiTrack[] | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
+
+  type LyricsResult = { id: number; title: string; artist: string; thumbnail: string };
+  type ActiveLyrics = { title: string; artist: string; lyrics: string };
+  const [lyricsQuery, setLyricsQuery] = useState("");
+  const [lyricsSearchLoading, setLyricsSearchLoading] = useState(false);
+  const [lyricsResults, setLyricsResults] = useState<LyricsResult[] | null>(null);
+  const [activeLyrics, setActiveLyrics] = useState<ActiveLyrics | null>(null);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -313,6 +321,56 @@ export default function Home() {
     }
   }
 
+  async function handleLyricsSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = lyricsQuery.trim();
+    if (!trimmed || lyricsSearchLoading) return;
+    setLyricsSearchLoading(true);
+    setLyricsResults(null);
+    setActiveLyrics(null);
+    try {
+      const res = await fetch(`/api/genius?q=${encodeURIComponent(trimmed)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lyrics search failed");
+      setLyricsResults(data.results);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Lyrics search failed");
+    } finally {
+      setLyricsSearchLoading(false);
+    }
+  }
+
+  async function handleFetchLyrics(id: number) {
+    setLyricsLoading(true);
+    setActiveLyrics(null);
+    try {
+      const res = await fetch(`/api/genius?id=${id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to get lyrics");
+      setActiveLyrics({ title: data.title, artist: data.artist, lyrics: data.lyrics });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to get lyrics");
+    } finally {
+      setLyricsLoading(false);
+    }
+  }
+
+  function sendLyricsToChat() {
+    if (!activeLyrics) return;
+    const msg = `Here are the lyrics to "${activeLyrics.title}" by ${activeLyrics.artist}. Break down the songwriting — what's working, what's not, the rhyme scheme, imagery, and themes.\n\n${activeLyrics.lyrics}`;
+    setInput(msg);
+    setActiveLyrics(null);
+    setLyricsResults(null);
+    setLyricsQuery("");
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        textareaRef.current.focus();
+      }
+    }, 0);
+  }
+
   async function createPlaylistFromResults() {
     if (!spotifyResults?.tracks?.length) return;
 
@@ -513,6 +571,18 @@ export default function Home() {
                 {spotifyLoading ? "..." : "Search"}
               </button>
             </form>
+            <form onSubmit={handleLyricsSearch} className="sp-search-form">
+              <input
+                type="text"
+                value={lyricsQuery}
+                onChange={(e) => setLyricsQuery(e.target.value)}
+                placeholder="Find lyrics..."
+                className="sp-search-input"
+              />
+              <button type="submit" className="sp-search-btn" disabled={lyricsSearchLoading}>
+                {lyricsSearchLoading ? "..." : "Lyrics"}
+              </button>
+            </form>
             {spotifyResults?.tracks?.length ? (
               <button
                 type="button"
@@ -589,6 +659,56 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+            </div>
+          )}
+          {lyricsResults && (
+            <div className="netflix-row">
+              <div className="netflix-row-header">
+                <p className="netflix-row-label">Lyrics Search</p>
+                <button type="button" className="netflix-close" onClick={() => { setLyricsResults(null); setActiveLyrics(null); }} title="Close">✕</button>
+              </div>
+              <div className="netflix-scroll">
+                {lyricsResults.map((song) => (
+                  <div
+                    key={song.id}
+                    className="netflix-card lyrics-card"
+                    onClick={() => handleFetchLyrics(song.id)}
+                    title="Click to view lyrics"
+                  >
+                    {song.thumbnail ? (
+                      <img src={song.thumbnail} alt={song.title} className="netflix-card-img" />
+                    ) : (
+                      <div className="netflix-card-placeholder" />
+                    )}
+                    <p className="netflix-card-title">{song.title}</p>
+                    <p className="netflix-card-sub">{song.artist}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {lyricsLoading && (
+            <div className="lyrics-panel">
+              <p className="lyrics-loading">Loading lyrics...</p>
+            </div>
+          )}
+
+          {activeLyrics && (
+            <div className="lyrics-panel">
+              <div className="lyrics-panel-header">
+                <div>
+                  <p className="lyrics-panel-title">{activeLyrics.title}</p>
+                  <p className="lyrics-panel-artist">{activeLyrics.artist}</p>
+                </div>
+                <div className="lyrics-panel-actions">
+                  <button type="button" className="sp-ctrl-btn lyrics-analyze-btn" onClick={sendLyricsToChat}>
+                    Analyze with Lyris
+                  </button>
+                  <button type="button" className="netflix-close" onClick={() => setActiveLyrics(null)} title="Close">✕</button>
+                </div>
+              </div>
+              <pre className="lyrics-body">{activeLyrics.lyrics}</pre>
             </div>
           )}
         </section>
