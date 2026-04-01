@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 type ChatImage = {
   title: string;
@@ -73,7 +73,23 @@ export default function Home() {
   const [topArtists, setTopArtists] = useState<SpotifyApiArtist[] | null>(null);
   const [topTracks, setTopTracks] = useState<SpotifyApiTrack[] | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const auth = params.get("spotifyAuth");
+    if (auth === "success") {
+      setSpotifyConnected(true);
+      // clean up the URL
+      const clean = window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    } else if (auth === "denied" || auth === "error") {
+      alert("Spotify connection failed. Please try again.");
+      const clean = window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    }
+  }, []);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const [isListening, setIsListening] = useState(false);
@@ -472,6 +488,13 @@ export default function Home() {
 
         <section className="spotify-section">
           <div className="spotify-controls">
+            {spotifyConnected ? (
+              <span className="sp-connected-badge">Spotify connected</span>
+            ) : (
+              <a href="/api/spotify/login" className="sp-ctrl-btn sp-connect-btn">
+                Connect Spotify
+              </a>
+            )}
             <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("artists")}>
               Top artists
             </button>

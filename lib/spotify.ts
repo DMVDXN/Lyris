@@ -40,15 +40,17 @@ export async function getSpotifyAppAccessToken() {
   return data.access_token as string;
 }
 
-export async function refreshSpotifyUserAccessToken() {
+export async function getSpotifyUserAccessToken() {
   const cookieStore = await cookies();
 
-  const refreshToken =
-    process.env.SPOTIFY_REFRESH_TOKEN ||
-    cookieStore.get("spotify_refresh_token")?.value;
+  // Try the cached access token first (valid for ~1 hour after login)
+  const accessToken = cookieStore.get("spotify_access_token")?.value;
+  if (accessToken) return accessToken;
 
+  // Fall back to refreshing with the refresh token
+  const refreshToken = cookieStore.get("spotify_refresh_token")?.value;
   if (!refreshToken) {
-    throw new Error("No Spotify refresh token found");
+    throw new Error("Not connected to Spotify. Please connect your account.");
   }
 
   const basic = getSpotifyBasicAuth();
@@ -68,15 +70,11 @@ export async function refreshSpotifyUserAccessToken() {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Spotify refresh token error: ${text}`);
+    throw new Error(`Spotify token refresh error: ${text}`);
   }
 
   const data = await res.json();
   return data.access_token as string;
-}
-
-export async function getSpotifyUserAccessToken() {
-  return refreshSpotifyUserAccessToken();
 }
 
 export async function spotifyFetch(
