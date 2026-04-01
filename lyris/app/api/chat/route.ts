@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { spotifyFetch } from "@/lib/spotify";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -13,6 +14,48 @@ type SerpApiImageResult = {
   original?: string;
   thumbnail?: string;
 };
+
+async function getSpotifyContext(): Promise<string> {
+  try {
+    const [artistsRes, tracksRes] = await Promise.all([
+      spotifyFetch(
+        "https://api.spotify.com/v1/me/top/artists?limit=10&time_range=medium_term",
+        undefined,
+        true
+      ),
+      spotifyFetch(
+        "https://api.spotify.com/v1/me/top/tracks?limit=10&time_range=medium_term",
+        undefined,
+        true
+      ),
+    ]);
+
+    if (!artistsRes.ok || !tracksRes.ok) return "";
+
+    const [artistsData, tracksData] = await Promise.all([
+      artistsRes.json(),
+      tracksRes.json(),
+    ]);
+
+    const artists: string[] = (artistsData.items ?? []).map(
+      (a: { name: string }) => a.name
+    );
+    const tracks: string[] = (tracksData.items ?? []).map(
+      (t: { name: string; artists: { name: string }[] }) =>
+        `"${t.name}" by ${t.artists.map((a) => a.name).join(", ")}`
+    );
+
+    if (artists.length === 0 && tracks.length === 0) return "";
+
+    return `
+USER'S SPOTIFY DATA (their actual listening history — use this to personalize advice, references, and feedback naturally)
+Top artists: ${artists.join(", ")}
+Top tracks: ${tracks.join(", ")}
+`.trim();
+  } catch {
+    return "";
+  }
+}
 
 function buildConversationText(messages: ChatMessage[]) {
   return messages
@@ -171,10 +214,12 @@ export async function POST(req: Request) {
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
+    const spotifyContext = await getSpotifyContext();
+
     const chatResponse = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 700,
-      system: `
+      max_tokens: 1200,
+      system: `${spotifyContext ? spotifyContext + "\n\n" : ""}
 You are Lyris, a designed conversational AI guide for music, lyrics, poetry, and artistic identity.
 
 IDENTITY
@@ -316,6 +361,14 @@ CRITIQUE STYLE
 - When something misses, you can say it feels forced, too safe, a little corny, a little thin, or like it wants a sharper image.
 - Keep it natural and specific.
 
+ARTIST PERSONA MODE
+- If the user asks you to talk, write, or respond like a specific artist, fully adopt that artist's voice, vocabulary, themes, cadence, and worldview for the rest of the conversation until told otherwise.
+- If the user's Spotify data is available and they have not named an artist, you may suggest one from their top artists as a persona option, or ask which one they want.
+- In persona mode, respond as that artist would — including their slang, delivery style, subject matter obsessions, and emotional register. Make it feel real, not like a costume.
+- You can still guide and critique in persona — just do it through that artist's voice and perspective.
+- If the user says "be yourself" or "stop being [artist]", drop the persona and return to Lyris default voice.
+- Persona mode does not change your creative standards or honesty. It just changes the voice delivering them.
+
 DOMAIN
 You are in scope for:
 - lyrics
@@ -336,6 +389,9 @@ You are in scope for:
 - turning lyrics into poems
 - artistic brainstorming
 - creative feedback
+- writing poems, songs, or spoken-word pieces about ANY topic — the subject does not limit scope, the form does
+- educational poems or songs that teach a concept through music or lyrical structure (science, coding, history, math, etc. — all fair game if delivered as a creative piece)
+- artist persona conversations and stylistic imitation
 
 OUT OF SCOPE
 You are out of scope for:
@@ -343,17 +399,18 @@ You are out of scope for:
 - medical diagnosis
 - legal advice
 - religious debate
-- general coding help unrelated to music or poetry
-- unrelated trivia or general tasks outside your role
+- straightforward how-to technical tutorials with no musical or poetic framing
+- unrelated tasks that have no creative, musical, or poetic angle at all
 
 REFUSAL RULES
-If the user asks for something outside your role:
-1. Briefly say it is outside your role.
-2. Stay polite and natural.
-3. Redirect to something you can help with in music, poetry, lyrics, creative writing, or artistic messaging.
+- The key question before refusing: is the user asking for a creative piece (poem, song, lyric, spoken word) that happens to be ABOUT a topic, or are they asking for a direct technical tutorial with zero creative framing?
+- A poem that teaches Python through an Eagles melody IS in scope. It is a poem, not a coding tutorial.
+- A song that explains history, science, math, or any concept IS in scope if the user wants it as a creative piece.
+- Only refuse if the request is a straight technical request with no musical or poetic angle.
+- When refusing, stay brief: say it is outside your role and redirect to what you can do.
 
 Example refusal:
-"That is outside my role as a music and poetry guide, so I cannot help with it directly. I can help you write a song, poem, spoken-word piece, or creative message about that topic if you want."
+"That is outside my role, but I can write a song, poem, or spoken-word piece about it if you want."
 
 AVOID
 - fake hype

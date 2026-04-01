@@ -1,77 +1,67 @@
-import { NextResponse } from "next/server";
-import { spotifyFetch } from "@/lib/spotify";
-
 export const runtime = "nodejs";
+
+const VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // ElevenLabs "Bella" — warm, expressive
 
 export async function POST(req: Request) {
   try {
-    const { name, description, uris, isPublic } = await req.json();
+    const { text } = await req.json();
 
-    if (!name || typeof name !== "string") {
-      return NextResponse.json(
-        { error: "Playlist name is required." },
-        { status: 400 }
+    if (!text || typeof text !== "string") {
+      return new Response(JSON.stringify({ error: "text is required." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return new Response(
+        JSON.stringify({ error: "ELEVENLABS_API_KEY is missing from .env.local" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const meRes = await spotifyFetch(
-      "https://api.spotify.com/v1/me",
-      undefined,
-      true
-    );
-
-    if (!meRes.ok) {
-      const text = await meRes.text();
-      throw new Error(`Spotify current user fetch error: ${text}`);
-    }
-
-    const me = await meRes.json();
-
-    const createRes = await spotifyFetch(
-      `https://api.spotify.com/v1/users/${me.id}/playlists`,
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
       {
         method: "POST",
+        headers: {
+          "xi-api-key": process.env.ELEVENLABS_API_KEY,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+        },
         body: JSON.stringify({
-          name,
-          description: description ?? "",
-          public: Boolean(isPublic),
+          text,
+          model_id: "eleven_turbo_v2_5",
+          voice_settings: {
+            stability: 0.45,
+            similarity_boost: 0.75,
+          },
         }),
-      },
-      true
+      }
     );
 
-    if (!createRes.ok) {
-      const text = await createRes.text();
-      throw new Error(`Spotify create playlist error: ${text}`);
-    }
-
-    const playlist = await createRes.json();
-
-    if (Array.isArray(uris) && uris.length > 0) {
-      const addRes = await spotifyFetch(
-        `https://api.spotify.com/v1/playlists/${playlist.id}/tracks`,
-        {
-          method: "POST",
-          body: JSON.stringify({ uris }),
-        },
-        true
+    if (!res.ok) {
+      const errorText = await res.text();
+      return new Response(
+        JSON.stringify({ error: `ElevenLabs error: ${errorText}` }),
+        { status: res.status, headers: { "Content-Type": "application/json" } }
       );
-
-      if (!addRes.ok) {
-        const text = await addRes.text();
-        throw new Error(`Spotify add items error: ${text}`);
-      }
     }
 
-    return NextResponse.json(playlist);
+    const audioBuffer = await res.arrayBuffer();
+
+    return new Response(audioBuffer, {
+      status: 200,
+      headers: {
+        "Content-Type": "audio/mpeg",
+        "Content-Length": String(audioBuffer.byteLength),
+      },
+    });
   } catch (error) {
-    console.error("Spotify create playlist route error:", error);
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown Spotify create playlist error";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown TTS error";
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 
 type ChatImage = {
   title: string;
@@ -46,16 +46,18 @@ type SpotifyResults = {
   tracks: SpotifyTrackResult[];
 };
 
-type ExampleCard = {
-  title: string;
-  category: string;
-  prompt: string;
-  art: string;
+type SpotifyApiArtist = {
+  id: string;
+  name: string;
+  images?: { url: string }[];
 };
 
-function svgToDataUri(svg: string) {
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
+type SpotifyApiTrack = {
+  id: string;
+  name: string;
+  album?: { images?: { url: string }[] };
+  artists?: { name: string }[];
+};
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -64,18 +66,23 @@ export default function Home() {
   const [spotifyLoading, setSpotifyLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [spotifyResults, setSpotifyResults] = useState<SpotifyResults | null>(
-    null
-  );
-  const [topArtists, setTopArtists] = useState<any[] | null>(null);
-  const [topTracks, setTopTracks] = useState<any[] | null>(null);
+  const [songLoading, setSongLoading] = useState(false);
+  const [songUrl, setSongUrl] = useState<string | null>(null);
+  const [songStatus, setSongStatus] = useState("");
+  const [spotifyResults, setSpotifyResults] = useState<SpotifyResults | null>(null);
+  const [topArtists, setTopArtists] = useState<SpotifyApiArtist[] | null>(null);
+  const [topTracks, setTopTracks] = useState<SpotifyApiTrack[] | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+  const [isListening, setIsListening] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content:
-        "Yo, I’m Lyris. Bring me a lyric, a poem, a half-finished hook, a shaky idea, or a question about music theory and I’ll help you shape it into something sharper. What are you trying to make right now, and what do you want it to feel like?",
+        "Yo, I'm Lyris. Bring me a lyric, a poem, a half-finished hook, a shaky idea, or a question about music theory and I'll help you shape it into something sharper. What are you trying to make right now, and what do you want it to feel like?",
     },
   ]);
 
@@ -83,86 +90,66 @@ export default function Home() {
     .reverse()
     .find((msg) => msg.role === "assistant")?.content;
 
-  const heroArt = useMemo(
-    () =>
-      svgToDataUri(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="700" height="440" viewBox="0 0 700 440">
-          <defs>
-            <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="#09090b"/>
-              <stop offset="55%" stop-color="#18181b"/>
-              <stop offset="100%" stop-color="#0f172a"/>
-            </linearGradient>
-            <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="#22d3ee"/>
-              <stop offset="50%" stop-color="#a855f7"/>
-              <stop offset="100%" stop-color="#f43f5e"/>
-            </linearGradient>
-          </defs>
-          <rect width="700" height="440" rx="36" fill="url(#bg)"/>
-          <circle cx="145" cy="140" r="82" fill="url(#glow)" opacity="0.18"/>
-          <circle cx="585" cy="120" r="64" fill="#22d3ee" opacity="0.12"/>
-          <rect x="62" y="82" width="210" height="274" rx="30" fill="#111827" stroke="#27272a"/>
-          <rect x="304" y="98" width="330" height="44" rx="22" fill="#fafafa" opacity="0.96"/>
-          <rect x="304" y="166" width="265" height="24" rx="12" fill="#d4d4d8" opacity="0.92"/>
-          <rect x="304" y="208" width="292" height="24" rx="12" fill="#a1a1aa" opacity="0.75"/>
-          <rect x="304" y="250" width="220" height="24" rx="12" fill="#71717a" opacity="0.7"/>
-          <rect x="304" y="310" width="226" height="48" rx="24" fill="url(#glow)" opacity="0.94"/>
-          <path d="M128 136 L205 122 L205 247 Q205 282 169 292 Q135 298 120 274 Q106 251 128 234 Q141 224 161 226 L161 160 L128 168 Z" fill="#f8fafc"/>
-        </svg>
-      `),
-    []
-  );
+  function toggleListening() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert("Speech recognition is not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
 
-  const examples: ExampleCard[] = useMemo(
-    () => [
-      {
-        title: "Informational Task",
-        category: "Explain a concept",
-        prompt:
-          "What is a chord progression in simple terms, and why does it matter in songwriting?",
-        art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#111827"/><rect x="26" y="28" width="180" height="22" rx="11" fill="#fafafa"/></svg>`
-        ),
-      },
-      {
-        title: "Advice Task",
-        category: "Personalized guidance",
-        prompt:
-          "I want to start writing emotional R&B songs, but my hooks never feel memorable. What should I practice first?",
-        art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#18181b"/><circle cx="76" cy="74" r="32" fill="#22d3ee"/></svg>`
-        ),
-      },
-      {
-        title: "Multi-Turn Reasoning",
-        category: "Memory + follow-up",
-        prompt:
-          "I like writing poetry, but I want to turn it into lyrics without losing the original feeling.",
-        art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#0f172a"/><rect x="24" y="34" width="114" height="34" rx="14" fill="#fafafa"/></svg>`
-        ),
-      },
-      {
-        title: "Edge Case",
-        category: "Clarify vague input",
-        prompt:
-          "Help me. I want to write something, but I do not know if it should be a poem, a hook, or a full song.",
-        art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#09090b"/><circle cx="78" cy="86" r="38" fill="#fafafa"/></svg>`
-        ),
-      },
-      {
-        title: "Out of Scope",
-        category: "Refuse properly",
-        prompt: "Can you tell me which stocks I should buy this month?",
-        art: svgToDataUri(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" rx="24" fill="#111827"/><circle cx="78" cy="80" r="34" fill="#fafafa"/></svg>`
-        ),
-      },
-    ],
-    []
-  );
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const recognition = new SR();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+
+    recognition.onresult = (e: { results: { [key: number]: { [key: number]: { transcript: string } } }; resultIndex: number }) => {
+      const transcript = e.results[e.resultIndex][0].transcript;
+      setInput((prev) => {
+        const updated = prev ? prev + " " + transcript : transcript;
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.style.height = "auto";
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+          }
+        }, 0);
+        return updated;
+      });
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  function handleTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value);
+    const ta = e.target;
+    ta.style.height = "auto";
+    ta.style.height = `${ta.scrollHeight}px`;
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const form = e.currentTarget.closest("form");
+      if (form) form.requestSubmit();
+    }
+  }
+
+  function resetTextarea() {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -174,6 +161,7 @@ export default function Home() {
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
+    resetTextarea();
     setLoading(true);
 
     try {
@@ -192,14 +180,12 @@ export default function Home() {
           role: "assistant",
           content: data.reply || "No reply returned.",
           images: Array.isArray(data.images) ? data.images : [],
-          imageQuery:
-            typeof data.imageQuery === "string" ? data.imageQuery : "",
+          imageQuery: typeof data.imageQuery === "string" ? data.imageQuery : "",
         },
       ]);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Something went wrong.";
-
       setMessages([
         ...updatedMessages,
         { role: "assistant", content: `Error: ${errorMessage}` },
@@ -215,11 +201,8 @@ export default function Home() {
     if (!trimmed || spotifyLoading) return;
 
     setSpotifyLoading(true);
-
     try {
-      const res = await fetch(
-        `/api/spotify/search?q=${encodeURIComponent(trimmed)}`
-      );
+      const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(trimmed)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Spotify search failed.");
       setSpotifyResults(data);
@@ -229,6 +212,52 @@ export default function Home() {
       setSpotifyLoading(false);
     }
   }
+
+  async function handleGenerateSong() {
+    if (!latestAssistantMessage || songLoading) return;
+    setSongLoading(true);
+    setSongUrl(null);
+    setSongStatus("Formatting lyrics...");
+    try {
+      // Step 1: create prediction
+      const createRes = await fetch("/api/generate-song", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: latestAssistantMessage }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok) throw new Error(createData.error || "Failed to start generation.");
+
+      const { predictionId } = createData;
+      setSongStatus("Generating — this takes ~60s...");
+
+      // Step 2: poll until done
+      const start = Date.now();
+      while (Date.now() - start < 600000) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const pollRes = await fetch(`/api/generate-song?id=${predictionId}`);
+
+        if (pollRes.headers.get("Content-Type")?.includes("audio")) {
+          const blob = await pollRes.blob();
+          setSongUrl(URL.createObjectURL(blob));
+          setSongStatus("");
+          return;
+        }
+
+        const pollData = await pollRes.json();
+        if (pollData.status === "failed") throw new Error(pollData.error || "Generation failed.");
+        setSongStatus(`${pollData.status === "processing" ? "Singing" : "Starting up"}...`);
+      }
+
+      throw new Error("Timed out waiting for song.");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to generate song.");
+      setSongStatus("");
+    } finally {
+      setSongLoading(false);
+    }
+  }
+
 
   async function handleReadAloud() {
     if (!latestAssistantMessage || audioLoading) return;
@@ -261,7 +290,6 @@ export default function Home() {
       const res = await fetch(`/api/spotify/me/top-items?type=${type}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load top items");
-
       if (type === "artists") setTopArtists(data.items ?? []);
       if (type === "tracks") setTopTracks(data.items ?? []);
     } catch (error) {
@@ -304,91 +332,11 @@ export default function Home() {
     }
   }
 
-  function loadPrompt(prompt: string) {
-    setInput(prompt);
-  }
-
   return (
     <main className="page-shell">
       <div className="page-container">
-        <section className="hero-panel">
-          <div className="hero-copy">
-            <div className="badge-row">
-              <span className="badge-pill">Music Critic Insight</span>
-              <span className="badge-pill">Interviewer Curiosity</span>
-              <span className="badge-pill">Creative Mentor Energy</span>
-            </div>
-
-            <h1 className="hero-title">Lyris</h1>
-            <p className="hero-subtitle">
-              A designed conversational AI for music and poetry with real taste,
-              real curiosity, Spotify-powered discovery, expressive audio output,
-              and visual image search.
-            </p>
-
-            <div className="persona-grid">
-              <div className="persona-card">
-                <h3>Personality</h3>
-                <p>Sharp, expressive, curious, and thoughtful.</p>
-              </div>
-              <div className="persona-card">
-                <h3>Spotify Layer</h3>
-                <p>Search, artwork, embeds, top items, and playlist creation.</p>
-              </div>
-              <div className="persona-card">
-                <h3>Audio Layer</h3>
-                <p>Turn Lyris responses into spoken poem or lyric audio.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="hero-visual-wrap">
-            <img src={heroArt} alt="Lyris visual identity" className="hero-visual" />
-          </div>
-        </section>
-
-        <section className="examples-section">
-          <div className="section-header">
-            <div>
-              <p className="section-kicker">Required Test Categories</p>
-              <h2>Demo prompts built into the interface</h2>
-            </div>
-            <p className="section-note">Click any card to load a prompt.</p>
-          </div>
-
-          <div className="example-grid">
-            {examples.map((example) => (
-              <button
-                key={example.title}
-                type="button"
-                onClick={() => loadPrompt(example.prompt)}
-                className="example-card"
-              >
-                <img src={example.art} alt={example.title} className="example-art" />
-                <div className="example-body">
-                  <p className="example-category">{example.category}</p>
-                  <h3>{example.title}</h3>
-                  <p>{example.prompt}</p>
-                  <span className="example-action">Load prompt</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
         <section className="main-layout">
           <div className="chat-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="section-kicker">Live Conversation</p>
-                <h2>Talk to Lyris</h2>
-              </div>
-              <p className="panel-note">
-                The bot should guide, critique, clarify, adapt across turns, and
-                return matching visuals.
-              </p>
-            </div>
-
             <div className="chat-window">
               {messages.map((msg, index) => (
                 <div
@@ -407,21 +355,13 @@ export default function Home() {
                     msg.images &&
                     msg.images.length > 0 && (
                       <div style={{ marginTop: 16 }}>
-                        <p
-                          style={{
-                            fontSize: "0.8rem",
-                            color: "#a1a1aa",
-                            marginBottom: 10,
-                          }}
-                        >
+                        <p style={{ fontSize: "0.8rem", color: "#a1a1aa", marginBottom: 10 }}>
                           Visual search: {msg.imageQuery}
                         </p>
-
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns:
-                              "repeat(auto-fit, minmax(160px, 1fr))",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
                             gap: 12,
                           }}
                         >
@@ -443,32 +383,14 @@ export default function Home() {
                               <img
                                 src={image.imageUrl || image.thumbnail}
                                 alt={image.title}
-                                style={{
-                                  width: "100%",
-                                  height: 160,
-                                  objectFit: "cover",
-                                  display: "block",
-                                }}
+                                style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }}
                               />
                               <div style={{ padding: 10 }}>
-                                <p
-                                  style={{
-                                    margin: 0,
-                                    fontSize: "0.9rem",
-                                    fontWeight: 600,
-                                    color: "#fafafa",
-                                  }}
-                                >
+                                <p style={{ margin: 0, fontSize: "0.9rem", fontWeight: 600, color: "#fafafa" }}>
                                   {image.title}
                                 </p>
                                 {image.source && (
-                                  <p
-                                    style={{
-                                      margin: "6px 0 0",
-                                      fontSize: "0.8rem",
-                                      color: "#a1a1aa",
-                                    }}
-                                  >
+                                  <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#a1a1aa" }}>
                                     {image.source}
                                   </p>
                                 )}
@@ -484,19 +406,29 @@ export default function Home() {
               {loading && (
                 <div className="chat-bubble assistant-bubble">
                   <p className="bubble-label">Lyris</p>
-                  <p>Thinking through the angle, the feeling, and the craft...</p>
+                  <p>Thinking...</p>
                 </div>
               )}
             </div>
 
             <form onSubmit={handleSubmit} className="chat-form">
-              <input
-                type="text"
+              <textarea
+                ref={textareaRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Bring a lyric, poem, hook, concept, or music question..."
+                onChange={handleTextareaChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Lyric, poem, hook, or question... (Shift+Enter for new line)"
                 className="chat-input"
+                rows={1}
               />
+              <button
+                type="button"
+                onClick={toggleListening}
+                className={`mic-button${isListening ? " mic-active" : ""}`}
+                title={isListening ? "Stop listening" : "Speak"}
+              >
+                {isListening ? "⏹" : "🎤"}
+              </button>
               <button type="submit" disabled={loading} className="send-button">
                 Send
               </button>
@@ -509,180 +441,133 @@ export default function Home() {
                 onClick={handleReadAloud}
                 disabled={!latestAssistantMessage || audioLoading}
               >
-                {audioLoading ? "Generating audio..." : "Read latest reply aloud"}
+                {audioLoading ? "Generating..." : "Read aloud"}
+              </button>
+              <button
+                type="button"
+                className="quick-prompt suno-btn"
+                onClick={handleGenerateSong}
+                disabled={!latestAssistantMessage || songLoading}
+              >
+                {songLoading ? (songStatus || "Starting...") : "Generate song"}
               </button>
             </div>
 
             {audioUrl && (
               <div className="audio-player-wrap">
+                <p className="audio-player-label">Voice</p>
                 <audio controls src={audioUrl} style={{ width: "100%" }} />
+              </div>
+            )}
+
+            {songUrl && (
+              <div className="audio-player-wrap">
+                <p className="audio-player-label">Generated song</p>
+                <audio controls src={songUrl} style={{ width: "100%" }} />
               </div>
             )}
           </div>
 
-          <aside className="sidebar-stack">
-            <div className="side-card">
-              <p className="section-kicker">Spotify Personalization</p>
-              <h3>Use your connected Spotify account</h3>
-              <div className="inline-actions">
-                <button
-                  type="button"
-                  className="quick-prompt"
-                  onClick={() => loadTopItems("artists")}
-                >
-                  Load top artists
-                </button>
-                <button
-                  type="button"
-                  className="quick-prompt"
-                  onClick={() => loadTopItems("tracks")}
-                >
-                  Load top tracks
-                </button>
-              </div>
-            </div>
+        </section>
 
-            <div className="side-card">
-              <p className="section-kicker">Spotify Discovery</p>
-              <h3>Search artists, albums, and tracks</h3>
-
-              <form
-                onSubmit={handleSpotifySearch}
-                className="chat-form"
-                style={{ marginTop: 14 }}
+        <section className="spotify-section">
+          <div className="spotify-controls">
+            <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("artists")}>
+              Top artists
+            </button>
+            <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("tracks")}>
+              Top tracks
+            </button>
+            <form onSubmit={handleSpotifySearch} className="sp-search-form">
+              <input
+                type="text"
+                value={spotifyQuery}
+                onChange={(e) => setSpotifyQuery(e.target.value)}
+                placeholder="Search artist, song, or album..."
+                className="sp-search-input"
+              />
+              <button type="submit" className="sp-search-btn" disabled={spotifyLoading}>
+                {spotifyLoading ? "..." : "Search"}
+              </button>
+            </form>
+            {spotifyResults?.tracks?.length ? (
+              <button
+                type="button"
+                className="sp-ctrl-btn"
+                onClick={createPlaylistFromResults}
+                disabled={playlistLoading}
               >
-                <input
-                  type="text"
-                  value={spotifyQuery}
-                  onChange={(e) => setSpotifyQuery(e.target.value)}
-                  placeholder="Search Spotify by mood, artist, song, or album..."
-                  className="chat-input"
-                />
-                <button
-                  type="submit"
-                  className="send-button"
-                  disabled={spotifyLoading}
-                >
-                  {spotifyLoading ? "Searching..." : "Search"}
-                </button>
-              </form>
+                {playlistLoading ? "Creating..." : "Create playlist"}
+              </button>
+            ) : null}
+          </div>
 
-              <div className="inline-actions">
-                <button
-                  type="button"
-                  className="quick-prompt"
-                  onClick={createPlaylistFromResults}
-                  disabled={playlistLoading || !spotifyResults?.tracks?.length}
-                >
-                  {playlistLoading
-                    ? "Creating playlist..."
-                    : "Create playlist from results"}
-                </button>
+          {topArtists && (
+            <div className="netflix-row">
+              <div className="netflix-row-header">
+                <p className="netflix-row-label">Top Artists</p>
+                <button type="button" className="netflix-close" onClick={() => setTopArtists(null)} title="Close">✕</button>
+              </div>
+              <div className="netflix-scroll">
+                  {topArtists.map((artist) => (
+                    <div key={artist.id} className="netflix-card">
+                      {artist.images?.[0]?.url ? (
+                        <img src={artist.images[0].url} alt={artist.name} className="netflix-card-img" />
+                      ) : (
+                        <div className="netflix-card-placeholder" />
+                      )}
+                      <p className="netflix-card-title">{artist.name}</p>
+                    </div>
+                  ))}
+                </div>
+            </div>
+          )}
+
+          {topTracks && (
+            <div className="netflix-row">
+              <div className="netflix-row-header">
+                <p className="netflix-row-label">Top Tracks</p>
+                <button type="button" className="netflix-close" onClick={() => setTopTracks(null)} title="Close">✕</button>
+              </div>
+              <div className="netflix-scroll">
+                {topTracks.map((track) => (
+                  <div key={track.id} className="netflix-card">
+                    {track.album?.images?.[0]?.url ? (
+                      <img src={track.album.images[0].url} alt={track.name} className="netflix-card-img" />
+                    ) : (
+                      <div className="netflix-card-placeholder" />
+                    )}
+                    <p className="netflix-card-title">{track.name}</p>
+                    <p className="netflix-card-sub">{track.artists?.map((a) => a.name).join(", ")}</p>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
 
-            {topArtists && (
-              <div className="side-card">
-                <p className="section-kicker">Your top artists</p>
-                <div style={{ display: "grid", gap: 12 }}>
-                  {topArtists.slice(0, 5).map((artist: any) => (
-                    <div key={artist.id} className="spotify-result-card">
-                      {artist.images?.[0]?.url && (
-                        <img
-                          src={artist.images[0].url}
-                          alt={artist.name}
-                          className="spotify-result-image"
-                        />
-                      )}
-                      <strong>{artist.name}</strong>
-                    </div>
-                  ))}
-                </div>
+          {spotifyResults && (
+            <div className="netflix-row">
+              <div className="netflix-row-header">
+                <p className="netflix-row-label">Search Results</p>
+                <button type="button" className="netflix-close" onClick={() => setSpotifyResults(null)} title="Close">✕</button>
               </div>
-            )}
-
-            {topTracks && (
-              <div className="side-card">
-                <p className="section-kicker">Your top tracks</p>
-                <div style={{ display: "grid", gap: 12 }}>
-                  {topTracks.slice(0, 5).map((track: any) => (
-                    <div key={track.id} className="spotify-result-card">
-                      {track.album?.images?.[0]?.url && (
-                        <img
-                          src={track.album.images[0].url}
-                          alt={track.name}
-                          className="spotify-result-image"
-                        />
-                      )}
-                      <strong>{track.name}</strong>
-                      <p style={{ color: "#a1a1aa" }}>
-                        {track.artists?.map((a: any) => a.name).join(", ")}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {spotifyResults && (
-              <div className="side-card">
-                <p className="section-kicker">Spotify Results</p>
-                <h3>Artwork, links, and embeds</h3>
-
-                <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
-                  {spotifyResults.tracks.slice(0, 3).map((track) => (
-                    <div key={track.id} className="spotify-result-card">
-                      {track.image && (
-                        <img
-                          src={track.image}
-                          alt={track.name}
-                          className="spotify-result-image"
-                        />
-                      )}
-
-                      <strong>{track.name}</strong>
-                      <p style={{ margin: "6px 0 10px", color: "#a1a1aa" }}>
-                        {track.artistNames}
-                      </p>
-
-                      {track.spotifyUrl && (
-                        <a
-                          href={track.spotifyUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="spotify-link"
-                        >
-                          Open on Spotify
-                        </a>
-                      )}
-
+              <div className="netflix-scroll">
+                  {spotifyResults.tracks.map((track) => (
+                    <div key={track.id} className="netflix-card netflix-card-embed">
                       <iframe
-                        src={`https://open.spotify.com/embed/track/${track.id}?utm_source=generator`}
+                        title={`Spotify embed: ${track.name}`}
+                        src={`https://open.spotify.com/embed/track/${track.id}?utm_source=generator&theme=0`}
                         width="100%"
                         height="152"
-                        frameBorder="0"
                         allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                         loading="lazy"
-                        style={{ marginTop: 12, borderRadius: 12 }}
+                        className="netflix-embed"
                       />
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            <div className="side-card">
-              <p className="section-kicker">Project identity</p>
-              <h3>What this version adds</h3>
-              <ul>
-                <li>Designed chatbot personality and refusal behavior</li>
-                <li>Multi-turn memory across the current session</li>
-                <li>Spotify search, artwork, embeds, top items, and playlists</li>
-                <li>Spoken audio for poem or lyric output</li>
-                <li>Visual image search results based on the conversation</li>
-              </ul>
             </div>
-          </aside>
+          )}
         </section>
       </div>
     </main>
