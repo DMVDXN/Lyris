@@ -494,13 +494,27 @@ button {
   display: flex;
   gap: 14px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 10px;
   scroll-snap-type: x mandatory;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
 }
 
 .netflix-scroll::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.netflix-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.netflix-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 99px;
+}
+
+.netflix-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.4);
 }
 
 .netflix-card {
