@@ -665,6 +665,40 @@ button {
   color: var(--muted);
 }
 
+/* ── Artist persona button ── */
+
+.artist-card {
+  position: relative;
+}
+
+.persona-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-b);
+  background: transparent;
+  color: var(--accent-b);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s, color 0.15s;
+}
+
+.persona-btn:hover:not(:disabled) {
+  background: var(--accent-b);
+  color: #fff;
+}
+
+.persona-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Lyrics panel ── */
 
 .lyrics-card {
