@@ -291,13 +291,27 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.bubble-label {
+.bubble-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin: 0 0 6px;
+}
+
+.bubble-label {
+  margin: 0;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.18em;
   opacity: 0.75;
+}
+
+.bubble-timestamp {
+  font-size: 0.68rem;
+  opacity: 0.45;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .chat-form {
@@ -663,6 +677,37 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--muted);
+}
+
+/* ── Chat panel header ── */
+
+.chat-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px 10px;
+}
+
+.chat-panel-user {
+  font-size: 0.75rem;
+  opacity: 0.5;
+  font-weight: 500;
+}
+
+.sign-out-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.sign-out-btn:hover {
+  opacity: 1;
 }
 
 /* ── Name modal ── */

@@ -1,6 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { spotifyFetch } from "@/lib/spotify";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -14,48 +13,6 @@ type SerpApiImageResult = {
   original?: string;
   thumbnail?: string;
 };
-
-async function getSpotifyContext(): Promise<string> {
-  try {
-    const [artistsRes, tracksRes] = await Promise.all([
-      spotifyFetch(
-        "https://api.spotify.com/v1/me/top/artists?limit=10&time_range=medium_term",
-        undefined,
-        true
-      ),
-      spotifyFetch(
-        "https://api.spotify.com/v1/me/top/tracks?limit=10&time_range=medium_term",
-        undefined,
-        true
-      ),
-    ]);
-
-    if (!artistsRes.ok || !tracksRes.ok) return "";
-
-    const [artistsData, tracksData] = await Promise.all([
-      artistsRes.json(),
-      tracksRes.json(),
-    ]);
-
-    const artists: string[] = (artistsData.items ?? []).map(
-      (a: { name: string }) => a.name
-    );
-    const tracks: string[] = (tracksData.items ?? []).map(
-      (t: { name: string; artists: { name: string }[] }) =>
-        `"${t.name}" by ${t.artists.map((a) => a.name).join(", ")}`
-    );
-
-    if (artists.length === 0 && tracks.length === 0) return "";
-
-    return `
-USER'S SPOTIFY DATA (their actual listening history — use this to personalize advice, references, and feedback naturally)
-Top artists: ${artists.join(", ")}
-Top tracks: ${tracks.join(", ")}
-`.trim();
-  } catch {
-    return "";
-  }
-}
 
 function buildConversationText(messages: ChatMessage[]) {
   return messages
@@ -174,7 +131,7 @@ async function searchImagesWithSerpApi(query: string) {
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages, userName } = await req.json();
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -214,12 +171,12 @@ export async function POST(req: Request) {
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
 
-    const spotifyContext = await getSpotifyContext();
+    const userContext = userName ? `USER'S NAME: ${userName} — Address them by name naturally when relevant. If they ask what their name is, tell them it's ${userName}.\n\n` : "";
 
     const chatResponse = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1200,
-      system: `${spotifyContext ? spotifyContext + "\n\n" : ""}
+      system: `${userContext}
 You are Lyris, a designed conversational AI guide for music, lyrics, poetry, and artistic identity.
 
 IDENTITY

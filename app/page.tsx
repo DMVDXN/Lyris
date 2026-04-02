@@ -18,6 +18,7 @@ type ChatMessage = {
   images?: ChatImage[];
   imageQuery?: string;
   generatedImage?: string;
+  timestamp?: string;
 };
 
 type SpotifyArtistResult = {
@@ -42,18 +43,6 @@ type SpotifyResults = {
   tracks: SpotifyTrackResult[];
 };
 
-type SpotifyApiArtist = {
-  id: string;
-  name: string;
-  images?: { url: string }[];
-};
-
-type SpotifyApiTrack = {
-  id: string;
-  name: string;
-  album?: { images?: { url: string }[] };
-  artists?: { name: string }[];
-};
 
 function detectImageRequest(text: string): string | null {
   const t = text.trim();
@@ -84,10 +73,6 @@ export default function Home() {
   const [songStatus, setSongStatus] = useState("");
   const [imageLoading, setImageLoading] = useState(false);
   const [spotifyResults, setSpotifyResults] = useState<SpotifyResults | null>(null);
-  const [topArtists, setTopArtists] = useState<SpotifyApiArtist[] | null>(null);
-  const [topTracks, setTopTracks] = useState<SpotifyApiTrack[] | null>(null);
-  const [playlistLoading, setPlaylistLoading] = useState(false);
-  const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [writingFor, setWritingFor] = useState<string | null>(null);
 
   // User identity
@@ -154,20 +139,7 @@ export default function Home() {
     }
   }, [userName]);
 
-  // Spotify OAuth callback
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const auth = params.get("spotifyAuth");
-    if (auth === "success") {
-      setSpotifyConnected(true);
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (auth === "denied" || auth === "error") {
-      alert("Spotify connection failed. Please try again.");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
-  // Save conversation to Firestore after each exchange
+// Save conversation to Firestore after each exchange
   useEffect(() => {
     if (!userId || !userName || messages.length <= 1) return;
     const lastMsg = messages[messages.length - 1];
@@ -183,6 +155,7 @@ export default function Home() {
             messages: messages.slice(-60).map((m) => ({
               role: m.role,
               content: m.content,
+              ...(m.timestamp ? { timestamp: m.timestamp } : {}),
               ...(m.generatedImage ? { generatedImage: m.generatedImage } : {}),
             })),
             updatedAt: serverTimestamp(),
@@ -202,7 +175,15 @@ export default function Home() {
     if (!name) return;
     localStorage.setItem("lyrisUserName", name);
     setUserName(name);
+    setNameInput("");
     setShowNameModal(false);
+  }
+
+  function handleSignOut() {
+    localStorage.removeItem("lyrisUserName");
+    setUserName(null);
+    setNameInput("");
+    setShowNameModal(true);
   }
 
   function toggleListening() {
@@ -257,7 +238,7 @@ export default function Home() {
   }
 
   async function sendToChat(content: string) {
-    const userMessage: ChatMessage = { role: "user", content };
+    const userMessage: ChatMessage = { role: "user", content, timestamp: new Date().toISOString() };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setLoading(true);
@@ -265,7 +246,7 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ messages: updatedMessages, userName }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed.");
@@ -274,6 +255,7 @@ export default function Home() {
         content: data.reply || "No reply returned.",
         images: Array.isArray(data.images) ? data.images : [],
         imageQuery: typeof data.imageQuery === "string" ? data.imageQuery : "",
+        timestamp: new Date().toISOString(),
       }]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Something went wrong.";
@@ -285,7 +267,7 @@ export default function Home() {
   }
 
   async function handleImageGenerate(prompt: string, userText: string) {
-    const userMessage: ChatMessage = { role: "user", content: userText };
+    const userMessage: ChatMessage = { role: "user", content: userText, timestamp: new Date().toISOString() };
     const placeholderMsg: ChatMessage = { role: "assistant", content: "Generating your image..." };
     const base = [...messages, userMessage, placeholderMsg];
     setMessages(base);
@@ -302,7 +284,7 @@ export default function Home() {
 
       // Completed immediately
       if (createData.imageUrl) {
-        setMessages([...messages, userMessage, { role: "assistant", content: "Here's your image:", generatedImage: createData.imageUrl }]);
+        setMessages([...messages, userMessage, { role: "assistant", content: "Here's your image:", generatedImage: createData.imageUrl, timestamp: new Date().toISOString() }]);
         return;
       }
 
@@ -314,7 +296,7 @@ export default function Home() {
         const poll = await fetch(`/api/generate-image?id=${predictionId}`);
         const pollData = await poll.json();
         if (pollData.status === "succeeded") {
-          setMessages([...messages, userMessage, { role: "assistant", content: "Here's your image:", generatedImage: pollData.imageUrl }]);
+          setMessages([...messages, userMessage, { role: "assistant", content: "Here's your image:", generatedImage: pollData.imageUrl, timestamp: new Date().toISOString() }]);
           return;
         }
         if (pollData.status === "failed") throw new Error(pollData.error || "Generation failed.");
@@ -322,7 +304,7 @@ export default function Home() {
       throw new Error("Image generation timed out.");
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to generate image.";
-      setMessages([...messages, userMessage, { role: "assistant", content: `Error: ${msg}` }]);
+      setMessages([...messages, userMessage, { role: "assistant", content: `Error: ${msg}`, timestamp: new Date().toISOString() }]);
     } finally {
       setImageLoading(false);
     }
@@ -419,19 +401,7 @@ export default function Home() {
     }
   }
 
-  async function loadTopItems(type: "artists" | "tracks") {
-    try {
-      const res = await fetch(`/api/spotify/me/top-items?type=${type}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load top items");
-      if (type === "artists") setTopArtists(data.items ?? []);
-      if (type === "tracks") setTopTracks(data.items ?? []);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to load top items");
-    }
-  }
-
-  async function handleEnterPersona(artistName: string) {
+async function handleEnterPersona(artistName: string) {
     if (loading) return;
     await sendToChat(
       `Talk to me as ${artistName}. Fully adopt their persona — their voice, flow, slang, worldview, subject matter, and the way they'd speak about music, creativity, and life. Stay in character for the rest of our conversation unless I say otherwise.`
@@ -509,28 +479,7 @@ export default function Home() {
     }, 0);
   }
 
-  async function createPlaylistFromResults() {
-    if (!spotifyResults?.tracks?.length) return;
-    setPlaylistLoading(true);
-    try {
-      const uris = spotifyResults.tracks.slice(0, 5).map((t) => `spotify:track:${t.id}`);
-      const res = await fetch("/api/spotify/me/create-playlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Lyris Picks", description: "Created from Lyris conversation results", uris, isPublic: false }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create playlist");
-      if (data.external_urls?.spotify) window.open(data.external_urls.spotify, "_blank");
-      else alert("Playlist created.");
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to create playlist");
-    } finally {
-      setPlaylistLoading(false);
-    }
-  }
-
-  return (
+return (
     <main className="page-shell">
       {/* Name modal */}
       {showNameModal && (
@@ -559,17 +508,30 @@ export default function Home() {
       <div className="page-container">
         <section className="main-layout">
           <div className="chat-panel">
+            {userName && (
+              <div className="chat-panel-header">
+                <span className="chat-panel-user">Chatting as {userName}</span>
+                <button type="button" className="sign-out-btn" onClick={handleSignOut}>Change name</button>
+              </div>
+            )}
             <div className="chat-window">
               {messages.map((msg, index) => (
                 <div key={index} className={`chat-bubble ${msg.role === "user" ? "user-bubble" : "assistant-bubble"}`}>
-                  <p className="bubble-label">{msg.role === "user" ? (userName ?? "You") : "Lyris"}</p>
+                  <div className="bubble-header">
+                    <p className="bubble-label">{msg.role === "user" ? (userName ?? "You") : "Lyris"}</p>
+                    {msg.timestamp && (
+                      <span className="bubble-timestamp">
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </div>
                   <p>{msg.content}</p>
 
                   {msg.generatedImage && (
                     <img
                       src={msg.generatedImage}
                       alt="Generated"
-                      style={{ marginTop: 12, borderRadius: 14, maxWidth: "100%", display: "block" }}
+                      style={{ marginTop: 12, borderRadius: 14, maxWidth: "260px", width: "100%", display: "block" }}
                     />
                   )}
 
@@ -646,13 +608,6 @@ export default function Home() {
 
         <section className="spotify-section">
           <div className="spotify-controls">
-            {spotifyConnected ? (
-              <span className="sp-connected-badge">Spotify connected</span>
-            ) : (
-              <a href="/api/spotify/login" className="sp-ctrl-btn sp-connect-btn">Connect Spotify</a>
-            )}
-            <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("artists")}>Top artists</button>
-            <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("tracks")}>Top tracks</button>
             <form onSubmit={handleSpotifySearch} className="sp-search-form">
               <input type="text" value={spotifyQuery} onChange={(e) => setSpotifyQuery(e.target.value)}
                 placeholder="Search artists or songs..." className="sp-search-input" />
@@ -667,11 +622,6 @@ export default function Home() {
                 {lyricsSearchLoading ? "..." : "Lyrics"}
               </button>
             </form>
-            {spotifyResults?.tracks?.length ? (
-              <button type="button" className="sp-ctrl-btn" onClick={createPlaylistFromResults} disabled={playlistLoading}>
-                {playlistLoading ? "Creating..." : "Create playlist"}
-              </button>
-            ) : null}
           </div>
 
           {writingFor && (
@@ -680,50 +630,7 @@ export default function Home() {
             </div>
           )}
 
-          {topArtists && (
-            <div className="netflix-row">
-              <div className="netflix-row-header">
-                <p className="netflix-row-label">Top Artists</p>
-                <button type="button" className="netflix-close" onClick={() => setTopArtists(null)} title="Close">✕</button>
-              </div>
-              <div className="netflix-scroll">
-                {topArtists.map((artist) => (
-                  <div key={artist.id} className="netflix-card artist-card">
-                    {artist.images?.[0]?.url ? <img src={artist.images[0].url} alt={artist.name} className="netflix-card-img" /> : <div className="netflix-card-placeholder" />}
-                    <p className="netflix-card-title">{artist.name}</p>
-                    <button type="button" className="persona-btn" onClick={() => handleEnterPersona(artist.name)} disabled={loading}>
-                      Be {artist.name}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {topTracks && (
-            <div className="netflix-row">
-              <div className="netflix-row-header">
-                <p className="netflix-row-label">Top Tracks</p>
-                <button type="button" className="netflix-close" onClick={() => setTopTracks(null)} title="Close">✕</button>
-              </div>
-              <div className="netflix-scroll">
-                {topTracks.map((track) => (
-                  <div key={track.id} className="netflix-card artist-card">
-                    {track.album?.images?.[0]?.url ? <img src={track.album.images[0].url} alt={track.name} className="netflix-card-img" /> : <div className="netflix-card-placeholder" />}
-                    <p className="netflix-card-title">{track.name}</p>
-                    <p className="netflix-card-sub">{track.artists?.map((a) => a.name).join(", ")}</p>
-                    <button type="button" className="persona-btn write-btn"
-                      onClick={() => handleWriteLikeThis(track.name, track.artists?.map((a) => a.name).join(", ") ?? "")}
-                      disabled={loading || !!writingFor}>
-                      Write like this
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {spotifyResults && spotifyResults.artists.length > 0 && (
+{spotifyResults && spotifyResults.artists.length > 0 && (
             <div className="netflix-row">
               <div className="netflix-row-header">
                 <p className="netflix-row-label">Artists</p>
