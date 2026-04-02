@@ -109,17 +109,33 @@ export async function GET(req: Request) {
     const artist = songData.response.song.primary_artist.name;
 
     const pageRes = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://genius.com/",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+      },
       cache: "no-store",
     });
     if (!pageRes.ok) {
-      return NextResponse.json({ error: "Could not fetch lyrics page" }, { status: 502 });
+      console.error(`Genius page fetch failed: ${pageRes.status} for ${url}`);
+      return NextResponse.json(
+        { error: `Lyrics page returned ${pageRes.status}. This song may not be available.` },
+        { status: 502 }
+      );
     }
     const html = await pageRes.text();
     const lyrics = extractLyrics(html);
 
     if (!lyrics) {
-      return NextResponse.json({ error: "Lyrics not found for this song" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Lyrics not found — this song may use a different page format on Genius." },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ title, artist, lyrics });

@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { db } from "@/lib/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 type ChatImage = {
   title: string;
@@ -15,6 +17,7 @@ type ChatMessage = {
   content: string;
   images?: ChatImage[];
   imageQuery?: string;
+  generatedImage?: string;
 };
 
 type SpotifyArtistResult = {
@@ -52,6 +55,23 @@ type SpotifyApiTrack = {
   artists?: { name: string }[];
 };
 
+function detectImageRequest(text: string): string | null {
+  const t = text.trim();
+  const patterns = [
+    /^generate (?:an? )?(?:image|picture|photo|art|artwork|illustration|drawing|visual)(?: of)? (.+)/i,
+    /^create (?:an? )?(?:image|picture|photo|art|artwork|illustration|drawing|visual)(?: of)? (.+)/i,
+    /^make (?:me )?(?:an? )?(?:image|picture|photo|art|artwork|illustration|drawing|visual)(?: of)? (.+)/i,
+    /^draw(?: me)? (.+)/i,
+    /^paint(?: me)? (.+)/i,
+    /^imagine (.+)/i,
+  ];
+  for (const p of patterns) {
+    const m = t.match(p);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
 export default function Home() {
   const [input, setInput] = useState("");
   const [spotifyQuery, setSpotifyQuery] = useState("");
@@ -62,12 +82,21 @@ export default function Home() {
   const [songLoading, setSongLoading] = useState(false);
   const [songUrl, setSongUrl] = useState<string | null>(null);
   const [songStatus, setSongStatus] = useState("");
+  const [imageLoading, setImageLoading] = useState(false);
   const [spotifyResults, setSpotifyResults] = useState<SpotifyResults | null>(null);
   const [topArtists, setTopArtists] = useState<SpotifyApiArtist[] | null>(null);
   const [topTracks, setTopTracks] = useState<SpotifyApiTrack[] | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [writingFor, setWritingFor] = useState<string | null>(null);
+
+  // User identity
+  const [userName, setUserName] = useState<string | null>(null);
+  const [nameInput, setNameInput] = useState("");
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Lyrics
   const [lyricsQuery, setLyricsQuery] = useState("");
   const [lyricsSearchLoading, setLyricsSearchLoading] = useState(false);
   type LyricsResult = { id: number; title: string; artist: string; thumbnail: string };
@@ -93,6 +122,39 @@ export default function Home() {
     .reverse()
     .find((msg) => msg.role === "assistant")?.content;
 
+  // Init: load user from localStorage or show name modal
+  useEffect(() => {
+    const storedName = localStorage.getItem("lyrisUserName");
+    const storedId = localStorage.getItem("lyrisUserId");
+
+    if (storedName) {
+      setUserName(storedName);
+    } else {
+      setShowNameModal(true);
+    }
+
+    if (storedId) {
+      setUserId(storedId);
+    } else {
+      const newId = crypto.randomUUID();
+      localStorage.setItem("lyrisUserId", newId);
+      setUserId(newId);
+    }
+  }, []);
+
+  // Greet by name when we first get it
+  useEffect(() => {
+    if (userName) {
+      setMessages([
+        {
+          role: "assistant",
+          content: `Yo ${userName}, I'm Lyris. Bring me a lyric, a poem, a half-finished hook, a shaky idea, or a question about music theory and I'll help you shape it into something sharper. What are you trying to make right now, and what do you want it to feel like?`,
+        },
+      ]);
+    }
+  }, [userName]);
+
+  // Spotify OAuth callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const auth = params.get("spotifyAuth");
@@ -105,6 +167,44 @@ export default function Home() {
     }
   }, []);
 
+  // Save conversation to Firestore after each exchange
+  useEffect(() => {
+    if (!userId || !userName || messages.length <= 1) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role !== "assistant") return;
+
+    const save = async () => {
+      try {
+        await setDoc(
+          doc(db, "conversations", userId),
+          {
+            userName,
+            userId,
+            messages: messages.slice(-60).map((m) => ({
+              role: m.role,
+              content: m.content,
+              ...(m.generatedImage ? { generatedImage: m.generatedImage } : {}),
+            })),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (err) {
+        console.error("Firestore save error:", err);
+      }
+    };
+    save();
+  }, [messages, userId, userName]);
+
+  function handleNameSubmit(e: FormEvent) {
+    e.preventDefault();
+    const name = nameInput.trim();
+    if (!name) return;
+    localStorage.setItem("lyrisUserName", name);
+    setUserName(name);
+    setShowNameModal(false);
+  }
+
   function toggleListening() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -112,10 +212,7 @@ export default function Home() {
       alert("Speech recognition is not supported in this browser. Try Chrome or Edge.");
       return;
     }
-    if (isListening) {
-      recognitionRef.current?.stop();
-      return;
-    }
+    if (isListening) { recognitionRef.current?.stop(); return; }
     const recognition = new SR();
     recognition.lang = "en-US";
     recognition.interimResults = false;
@@ -156,9 +253,7 @@ export default function Home() {
   }
 
   function resetTextarea() {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
   }
 
   async function sendToChat(content: string) {
@@ -189,13 +284,63 @@ export default function Home() {
     setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 100);
   }
 
+  async function handleImageGenerate(prompt: string, userText: string) {
+    const userMessage: ChatMessage = { role: "user", content: userText };
+    const placeholderMsg: ChatMessage = { role: "assistant", content: "Generating your image..." };
+    const base = [...messages, userMessage, placeholderMsg];
+    setMessages(base);
+    setImageLoading(true);
+
+    try {
+      const createRes = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok) throw new Error(createData.error || "Failed to start.");
+
+      // Completed immediately
+      if (createData.imageUrl) {
+        setMessages([...messages, userMessage, { role: "assistant", content: "Here's your image:", generatedImage: createData.imageUrl }]);
+        return;
+      }
+
+      // Poll
+      const { predictionId } = createData;
+      const start = Date.now();
+      while (Date.now() - start < 120000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const poll = await fetch(`/api/generate-image?id=${predictionId}`);
+        const pollData = await poll.json();
+        if (pollData.status === "succeeded") {
+          setMessages([...messages, userMessage, { role: "assistant", content: "Here's your image:", generatedImage: pollData.imageUrl }]);
+          return;
+        }
+        if (pollData.status === "failed") throw new Error(pollData.error || "Generation failed.");
+      }
+      throw new Error("Image generation timed out.");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to generate image.";
+      setMessages([...messages, userMessage, { role: "assistant", content: `Error: ${msg}` }]);
+    } finally {
+      setImageLoading(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmedInput = input.trim();
-    if (!trimmedInput || loading) return;
+    if (!trimmedInput || loading || imageLoading) return;
     setInput("");
     resetTextarea();
-    await sendToChat(trimmedInput);
+
+    const imagePrompt = detectImageRequest(trimmedInput);
+    if (imagePrompt) {
+      await handleImageGenerate(imagePrompt, trimmedInput);
+    } else {
+      await sendToChat(trimmedInput);
+    }
   }
 
   async function handleSpotifySearch(e: FormEvent<HTMLFormElement>) {
@@ -266,8 +411,7 @@ export default function Home() {
         const data = await res.json();
         throw new Error(data.error || "Failed to generate audio.");
       }
-      const blob = await res.blob();
-      setAudioUrl(URL.createObjectURL(blob));
+      setAudioUrl(URL.createObjectURL(await res.blob()));
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to generate audio.");
     } finally {
@@ -285,6 +429,35 @@ export default function Home() {
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to load top items");
     }
+  }
+
+  async function handleEnterPersona(artistName: string) {
+    if (loading) return;
+    await sendToChat(
+      `Talk to me as ${artistName}. Fully adopt their persona — their voice, flow, slang, worldview, subject matter, and the way they'd speak about music, creativity, and life. Stay in character for the rest of our conversation unless I say otherwise.`
+    );
+  }
+
+  async function handleWriteLikeThis(trackName: string, artistName: string) {
+    if (loading || writingFor) return;
+    const key = `${trackName} — ${artistName}`;
+    setWritingFor(key);
+    let lyricsText = "";
+    try {
+      const searchRes = await fetch(`/api/genius?q=${encodeURIComponent(`${trackName} ${artistName}`)}`);
+      const searchData = await searchRes.json();
+      if (searchRes.ok && searchData.results?.length > 0) {
+        const lyricsRes = await fetch(`/api/genius?id=${searchData.results[0].id}`);
+        const lyricsData = await lyricsRes.json();
+        if (lyricsRes.ok && lyricsData.lyrics) lyricsText = lyricsData.lyrics;
+      }
+    } catch { /* proceed without lyrics */ } finally {
+      setWritingFor(null);
+    }
+    const msg = lyricsText
+      ? `I pulled the full lyrics to "${trackName}" by ${artistName} from Genius so we can study the craft. Here's the full text:\n\n${lyricsText}\n\nBreak down how they built this — the rhyme scheme, flow, structure, and imagery. Then write something original that captures the same energy and approach.`
+      : `Write something original in the style of "${trackName}" by ${artistName} — match their flow, rhyme scheme, structure, imagery, and emotional tone.`;
+    await sendToChat(msg);
   }
 
   async function handleLyricsSearch(e: React.FormEvent) {
@@ -315,7 +488,8 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || "Failed to get lyrics");
       setActiveLyrics({ title: data.title, artist: data.artist, lyrics: data.lyrics });
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to get lyrics");
+      const msg = error instanceof Error ? error.message : "Failed to get lyrics";
+      setActiveLyrics({ title: "Unavailable", artist: "", lyrics: msg });
     } finally {
       setLyricsLoading(false);
     }
@@ -333,37 +507,6 @@ export default function Home() {
         textareaRef.current.focus();
       }
     }, 0);
-  }
-
-  async function handleEnterPersona(artistName: string) {
-    if (loading) return;
-    await sendToChat(
-      `Talk to me as ${artistName}. Fully adopt their persona — their voice, flow, slang, worldview, subject matter, and the way they'd speak about music, creativity, and life. Stay in character for the rest of our conversation unless I say otherwise.`
-    );
-  }
-
-  async function handleWriteLikeThis(trackName: string, artistName: string) {
-    if (loading || writingFor) return;
-    const key = `${trackName} — ${artistName}`;
-    setWritingFor(key);
-    let lyricsText = "";
-    try {
-      const searchRes = await fetch(`/api/genius?q=${encodeURIComponent(`${trackName} ${artistName}`)}`);
-      const searchData = await searchRes.json();
-      if (searchRes.ok && searchData.results?.length > 0) {
-        const lyricsRes = await fetch(`/api/genius?id=${searchData.results[0].id}`);
-        const lyricsData = await lyricsRes.json();
-        if (lyricsRes.ok && lyricsData.lyrics) lyricsText = lyricsData.lyrics;
-      }
-    } catch {
-      // proceed without lyrics
-    } finally {
-      setWritingFor(null);
-    }
-    const msg = lyricsText
-      ? `I pulled the full lyrics to "${trackName}" by ${artistName} from Genius so we can study the craft. Here's the full text:\n\n${lyricsText}\n\nBreak down how they built this — the rhyme scheme, flow, structure, and imagery. Then write something original that captures the same energy and approach.`
-      : `Write something original in the style of "${trackName}" by ${artistName} — match their flow, rhyme scheme, structure, imagery, and emotional tone.`;
-    await sendToChat(msg);
   }
 
   async function createPlaylistFromResults() {
@@ -389,14 +532,47 @@ export default function Home() {
 
   return (
     <main className="page-shell">
+      {/* Name modal */}
+      {showNameModal && (
+        <div className="name-modal-overlay">
+          <div className="name-modal">
+            <p className="name-modal-title">What should Lyris call you?</p>
+            <p className="name-modal-sub">Your name is saved locally and used to personalize your experience.</p>
+            <form onSubmit={handleNameSubmit} className="name-modal-form">
+              <input
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Your name..."
+                className="name-modal-input"
+                autoFocus
+                maxLength={40}
+              />
+              <button type="submit" className="name-modal-btn" disabled={!nameInput.trim()}>
+                Let&apos;s go
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="page-container">
         <section className="main-layout">
           <div className="chat-panel">
             <div className="chat-window">
               {messages.map((msg, index) => (
                 <div key={index} className={`chat-bubble ${msg.role === "user" ? "user-bubble" : "assistant-bubble"}`}>
-                  <p className="bubble-label">{msg.role === "user" ? "You" : "Lyris"}</p>
+                  <p className="bubble-label">{msg.role === "user" ? (userName ?? "You") : "Lyris"}</p>
                   <p>{msg.content}</p>
+
+                  {msg.generatedImage && (
+                    <img
+                      src={msg.generatedImage}
+                      alt="Generated"
+                      style={{ marginTop: 12, borderRadius: 14, maxWidth: "100%", display: "block" }}
+                    />
+                  )}
+
                   {msg.role === "assistant" && msg.imageQuery && msg.images && msg.images.length > 0 && (
                     <div style={{ marginTop: 16 }}>
                       <p style={{ fontSize: "0.8rem", color: "#a1a1aa", marginBottom: 10 }}>
@@ -419,10 +595,11 @@ export default function Home() {
                   )}
                 </div>
               ))}
-              {loading && (
+
+              {(loading || imageLoading) && (
                 <div className="chat-bubble assistant-bubble">
                   <p className="bubble-label">Lyris</p>
-                  <p>Thinking...</p>
+                  <p>{imageLoading ? "Generating image..." : "Thinking..."}</p>
                 </div>
               )}
             </div>
@@ -433,14 +610,14 @@ export default function Home() {
                 value={input}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Lyric, poem, hook, or question... (Shift+Enter for new line)"
+                placeholder='Lyric, poem, hook, or "generate an image of..."'
                 className="chat-input"
                 rows={1}
               />
               <button type="button" onClick={toggleListening} className={`mic-button${isListening ? " mic-active" : ""}`} title={isListening ? "Stop listening" : "Speak"}>
                 {isListening ? "⏹" : "🎤"}
               </button>
-              <button type="submit" disabled={loading} className="send-button">Send</button>
+              <button type="submit" disabled={loading || imageLoading} className="send-button">Send</button>
             </form>
 
             <div className="inline-actions">
@@ -477,25 +654,15 @@ export default function Home() {
             <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("artists")}>Top artists</button>
             <button type="button" className="sp-ctrl-btn" onClick={() => loadTopItems("tracks")}>Top tracks</button>
             <form onSubmit={handleSpotifySearch} className="sp-search-form">
-              <input
-                type="text"
-                value={spotifyQuery}
-                onChange={(e) => setSpotifyQuery(e.target.value)}
-                placeholder="Search artists or songs..."
-                className="sp-search-input"
-              />
+              <input type="text" value={spotifyQuery} onChange={(e) => setSpotifyQuery(e.target.value)}
+                placeholder="Search artists or songs..." className="sp-search-input" />
               <button type="submit" className="sp-search-btn" disabled={spotifyLoading}>
                 {spotifyLoading ? "..." : "Search"}
               </button>
             </form>
             <form onSubmit={handleLyricsSearch} className="sp-search-form">
-              <input
-                type="text"
-                value={lyricsQuery}
-                onChange={(e) => setLyricsQuery(e.target.value)}
-                placeholder="Find lyrics..."
-                className="sp-search-input"
-              />
+              <input type="text" value={lyricsQuery} onChange={(e) => setLyricsQuery(e.target.value)}
+                placeholder="Find lyrics..." className="sp-search-input" />
               <button type="submit" className="sp-search-btn" disabled={lyricsSearchLoading}>
                 {lyricsSearchLoading ? "..." : "Lyrics"}
               </button>
@@ -522,9 +689,7 @@ export default function Home() {
               <div className="netflix-scroll">
                 {topArtists.map((artist) => (
                   <div key={artist.id} className="netflix-card artist-card">
-                    {artist.images?.[0]?.url
-                      ? <img src={artist.images[0].url} alt={artist.name} className="netflix-card-img" />
-                      : <div className="netflix-card-placeholder" />}
+                    {artist.images?.[0]?.url ? <img src={artist.images[0].url} alt={artist.name} className="netflix-card-img" /> : <div className="netflix-card-placeholder" />}
                     <p className="netflix-card-title">{artist.name}</p>
                     <button type="button" className="persona-btn" onClick={() => handleEnterPersona(artist.name)} disabled={loading}>
                       Be {artist.name}
@@ -544,9 +709,7 @@ export default function Home() {
               <div className="netflix-scroll">
                 {topTracks.map((track) => (
                   <div key={track.id} className="netflix-card artist-card">
-                    {track.album?.images?.[0]?.url
-                      ? <img src={track.album.images[0].url} alt={track.name} className="netflix-card-img" />
-                      : <div className="netflix-card-placeholder" />}
+                    {track.album?.images?.[0]?.url ? <img src={track.album.images[0].url} alt={track.name} className="netflix-card-img" /> : <div className="netflix-card-placeholder" />}
                     <p className="netflix-card-title">{track.name}</p>
                     <p className="netflix-card-sub">{track.artists?.map((a) => a.name).join(", ")}</p>
                     <button type="button" className="persona-btn write-btn"
@@ -569,9 +732,7 @@ export default function Home() {
               <div className="netflix-scroll">
                 {spotifyResults.artists.map((artist) => (
                   <div key={artist.id} className="netflix-card artist-card">
-                    {artist.image
-                      ? <img src={artist.image} alt={artist.name} className="netflix-card-img" />
-                      : <div className="netflix-card-placeholder" />}
+                    {artist.image ? <img src={artist.image} alt={artist.name} className="netflix-card-img" /> : <div className="netflix-card-placeholder" />}
                     <p className="netflix-card-title">{artist.name}</p>
                     <button type="button" className="persona-btn" onClick={() => handleEnterPersona(artist.name)} disabled={loading}>
                       Be {artist.name}
@@ -591,15 +752,11 @@ export default function Home() {
               <div className="netflix-scroll">
                 {spotifyResults.tracks.map((track) => (
                   <div key={track.id} className="netflix-card netflix-card-embed">
-                    <iframe
-                      title={`Spotify embed: ${track.name}`}
+                    <iframe title={`Spotify embed: ${track.name}`}
                       src={`https://open.spotify.com/embed/track/${track.id}?utm_source=generator&theme=0`}
-                      width="100%"
-                      height="152"
+                      width="100%" height="152"
                       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                      loading="lazy"
-                      className="netflix-embed"
-                    />
+                      loading="lazy" className="netflix-embed" />
                     <button type="button" className="persona-btn write-btn"
                       onClick={() => handleWriteLikeThis(track.name, track.artistNames)}
                       disabled={loading || !!writingFor}>
@@ -610,6 +767,7 @@ export default function Home() {
               </div>
             </div>
           )}
+
           {lyricsResults && (
             <div className="netflix-row">
               <div className="netflix-row-header">
@@ -619,9 +777,7 @@ export default function Home() {
               <div className="netflix-scroll">
                 {lyricsResults.map((song) => (
                   <div key={song.id} className="netflix-card lyrics-card" onClick={() => handleFetchLyrics(song.id)} title="Click to view lyrics">
-                    {song.thumbnail
-                      ? <img src={song.thumbnail} alt={song.title} className="netflix-card-img" />
-                      : <div className="netflix-card-placeholder" />}
+                    {song.thumbnail ? <img src={song.thumbnail} alt={song.title} className="netflix-card-img" /> : <div className="netflix-card-placeholder" />}
                     <p className="netflix-card-title">{song.title}</p>
                     <p className="netflix-card-sub">{song.artist}</p>
                   </div>
